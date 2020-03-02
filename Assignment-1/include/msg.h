@@ -27,4 +27,5 @@ struct grp_message
     struct timeval time;
 };
 
+
 #endif

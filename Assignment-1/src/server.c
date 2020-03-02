@@ -10,10 +10,19 @@
 #include <sys/socket.h> 
 #include <netinet/in.h> 
 #include <sys/time.h> //FD_SET, FD_ISSET, FD_ZERO macros 
-	
+#include <pthread.h> 
+
+pthread_mutex_t lock;
+
 #define TRUE 1 
 #define FALSE 0 
 #define PORT 8080
+
+#define max_clients 100
+#define max_grp 100
+
+int client_socket[max_grp][max_clients];
+int client_count[max_grp];
 
 struct msg_queue
 {
@@ -37,14 +46,36 @@ void pop_message_from_queue()
 }
 
 
+void message_send_handler()
+{
+	while(1)
+	{	
+		struct grp_message *messg=NULL;		
+		pthread_mutex_lock(&lock);
 
+		if(queue_init==NULL)
+		{
+			messg=queue_init->messg;
+			pop_message_from_queue();
+		}
+		pthread_mutex_unlock(&lock);
 
+		for(int i=0; i<client_count[messg->grp_identifier];i++)
+		{
+			if(client_socket[messg->grp_indentifier][i])	
+		}
+	}
+
+}
+void message_recv_handler()
+{
+
+}
 
 int main(int argc , char *argv[]) 
 { 
 	int opt = TRUE; 
-	int master_socket , addrlen , new_socket , client_socket[30] , 
-		max_clients = 30 , activity, i , valread , sd; 
+	int master_socket , addrlen , new_socket , activity , valread , sd; 
 	int max_sd; 
 	struct sockaddr_in address; 
 		
@@ -56,10 +87,11 @@ int main(int argc , char *argv[])
 	//a message 
 	
 	//initialise all client_socket[] to 0 so not checked 
-	for (i = 0; i < max_clients; i++) 
-	{ 
-		client_socket[i] = 0; 
-	} 
+	for (int i = 0; i < max_grp; i++)
+		for (j = 0; j < max_clients; j++) 
+		{ 
+			client_socket[i][j] = 0; 
+		} 
 		
 	//create a master socket 
 	if( (master_socket = socket(AF_INET , SOCK_STREAM , 0)) == 0) 
