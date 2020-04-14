@@ -1,240 +1,259 @@
-//Example code: A simple server side code, which echos back the received message. 
-//Handle multiple socket connections with select and fd_set on Linux 
+// Server side C/C++ program to demonstrate Socket programming 
+#include <unistd.h> 
 #include <stdio.h> 
-#include <string.h> //strlen 
-#include <stdlib.h> 
-#include <errno.h> 
-#include <unistd.h> //close 
-#include <arpa/inet.h> //close 
-#include <sys/types.h> 
 #include <sys/socket.h> 
+#include <stdlib.h> 
 #include <netinet/in.h> 
-#include <sys/time.h> //FD_SET, FD_ISSET, FD_ZERO macros 
+#include <string.h> 
 #include <pthread.h> 
+#include <stdio.h> 
+#include <stdlib.h> 
+#include <signal.h>
 
-pthread_mutex_t lock;
+#include<msg.h>
 
-#define TRUE 1 
-#define FALSE 0 
-#define PORT 8080
 
-#define max_clients 100
-#define max_grp 100
 
-int client_socket[max_grp][max_clients];
-int client_count[max_grp];
+#define PORT 8080 
 
-struct msg_queue
+#define MAX_GROUPS 3
+#define MAX_USER_PERGROUP 100
+#define MAX_RECEIVER_THREAD 300
+
+
+pthread_t recv_pthread[MAX_RECEIVER_THREAD];
+pthread_t send_pthread[MAX_USER_PERGROUP];
+
+pthread_mutex_t connection_init_lock 	= PTHREAD_MUTEX_INITIALIZER; 
+// CONNECTION Initialization Lock: only enabled during new incoming connection
+
+pthread_mutex_t message_locking 		= PTHREAD_MUTEX_INITIALIZER;
+//Message Locking: Enabled when messages are being received or sent
+
+pthread_cond_t  QEMPTYWAIT				= PTHREAD_COND_INITIALIZER;
+//Conditional Wait: When Queue is empty these wait 
+
+//-----------------------------------------------------------------------
+struct message_queue *Message_Q=NULL;
+
+void push_to_queue(struct group_message incoming_message)
 {
-    struct grp_message *messg;
-    struct msg_queue *next; 
-}queue_init;
+    struct message_queue *new_msg=malloc(sizeof(struct message_queue));
+    
+    new_msg->message_q_ll   = incoming_message;
+    printf("incoming:%s\n",incoming_message.message);
+    new_msg->next           = Message_Q;
 
-void add_message_to_queue(struct grp_message *incoming_message)
-{
-struct msg_queue *new_q=malloc(sizeof(struct msg_queue));
-new_q->messg=incoming_message;
-new_q->next=queue_init;
-queue_init=new_q;
+    Message_Q                 =new_msg;
+
 }
 
-void pop_message_from_queue()
+struct group_message pop_from_queue()
+{   
+    //printf("controlJumpHere\n");
+    
+    struct message_queue *pop_msg   =Message_Q;
+    
+    Message_Q                       =Message_Q->next;
+
+    struct group_message pop_ret    =pop_msg->message_q_ll;
+    printf("outgoing:%s\n",pop_ret.message);
+    free(pop_msg);
+
+    return pop_ret;
+
+}
+
+int is_queue_empty()
 {
-	struct msg_queue *new_q=queue__;
-	queue_init=queue_init->next;
-	free(new_q);
+    return Message_Q==NULL;
+}
+
+void delete_queue(){
+
+    while(!is_queue_empty())
+    {
+        pop_from_queue();
+    }
+}
+//-----------------------------------------------------------------------
+
+int connection_socket[MAX_GROUPS][MAX_USER_PERGROUP];
+int connection_count[MAX_GROUPS];
+int client_count=0;
+int server_fd;
+
+int msg_id_counter;
+
+char group_name[MAX_GROUPS][gname_size];
+int group_init_count	=0;
+
+void handle_sig()
+{
+	printf("Do you want to close the server program?(Y/n):");
+	char close_in[10]="y";
+	//if(mode)
+	//scanf("%s",close_in);
+	if(close_in[0]=='y'||close_in[0]=='Y')
+	{
+		for(int i=0;i<3;i++)
+			pthread_kill(send_pthread[i],SIGKILL);
+		for(int i=0;i<client_count-1;i++)
+			pthread_kill(recv_pthread[i],SIGKILL);
+		
+		for(int i=0;i<group_init_count;i++)
+			for(int j=0;j<connection_count[i];j++)
+			close(connection_socket[i][j]);
+		close(server_fd);
+		delete_queue();
+		exit(0);
+	}
 }
 
 
-void message_send_handler()
+
+void* recv_message(void *nsock)
 {
-	while(1)
-	{	
-		struct grp_message *messg=NULL;		
-		pthread_mutex_lock(&lock);
+	int new_socket = *(int *)nsock;
+	pthread_mutex_lock(&connection_init_lock);
+	
+	struct group_chat_request new_request;
+	read(new_socket,&new_request,sizeof(new_request));
+	int group_identifier;
+	int user_identifier;
 
-		if(queue_init==NULL)
+	int flag=0;
+	struct group_chat_acknowledge new_ack;
+	
+	for(int i=0;i<group_init_count;i++)
+		if(!strcmp(new_request.group_name,group_name[i]))
 		{
-			messg=queue_init->messg;
-			pop_message_from_queue();
+			group_identifier =i;
+			user_identifier=connection_count[i];
+			connection_socket[i][connection_count[i]++]=new_socket;
+			flag=1;
+			break;
 		}
-		pthread_mutex_unlock(&lock);
 
-		for(int i=0; i<client_count[messg->grp_identifier];i++)
-		{
-			if(client_socket[messg->grp_indentifier][i])	
-		}
+	if(!flag)
+	{
+		strcpy(group_name[group_init_count],new_request.group_name);
+		group_identifier=group_init_count;
+		user_identifier=connection_count[group_identifier];
+		connection_socket[group_identifier][connection_count[group_identifier]++]	=new_socket;
+		group_init_count++;
 	}
 
-}
-void message_recv_handler()
-{
+	new_ack.group_identifier	=group_identifier;
+	new_ack.user_identifier		=user_identifier;
+	write(new_socket,&new_ack,sizeof(new_ack));
+	pthread_mutex_unlock(&connection_init_lock);
 
+	struct group_message new_message;
+
+	while(read(new_socket ,&new_message,sizeof(new_message)))
+	{
+			pthread_mutex_lock(&message_locking);
+			new_message.msgid=msg_id_counter++;
+			push_to_queue(new_message);
+			pthread_mutex_unlock(&message_locking);
+			pthread_cond_signal(&QEMPTYWAIT);
+	}
+	free(nsock);
 }
 
-int main(int argc , char *argv[]) 
+void* send_message(void *nsock)
+{	printf("New Send_message_thread\n");
+
+	struct group_message message_to_send;
+	int group_id;
+	int user_id;
+
+
+	while(1)
+	{
+		pthread_mutex_lock(&message_locking);	
+		while(is_queue_empty(Message_Q))
+		{
+			//printf("Waiting...\n");
+			pthread_cond_wait(&QEMPTYWAIT,&message_locking);
+		
+		}
+		//printf("What");
+		message_to_send=pop_from_queue();
+		group_id=message_to_send.group_identifier;
+		user_id=message_to_send.user_identifier;
+		//printf("Sending:%d\n",group_id);
+		pthread_mutex_unlock(&message_locking);
+		for(int i=0;i<connection_count[group_id];i++)
+			if(~connection_socket[group_id][i] && i!=user_id)
+				write(connection_socket[group_id][i],&message_to_send,sizeof(message_to_send));
+	}
+}
+
+int main(int argc, char const *argv[]) 
 { 
-	int opt = TRUE; 
-	int master_socket , addrlen , new_socket , activity , valread , sd; 
-	int max_sd; 
+	int valread; 
 	struct sockaddr_in address; 
-		
-	char buffer[1025]; //data buffer of 1K 
-		
-	//set of socket descriptors 
-	fd_set readfds; 
-		
-	//a message 
+	int opt = 1; 
+	int addrlen = sizeof(address); 
 	
-	//initialise all client_socket[] to 0 so not checked 
-	for (int i = 0; i < max_grp; i++)
-		for (j = 0; j < max_clients; j++) 
-		{ 
-			client_socket[i][j] = 0; 
-		} 
-		
-	//create a master socket 
-	if( (master_socket = socket(AF_INET , SOCK_STREAM , 0)) == 0) 
+	msg_id_counter=0;
+	// Creating socket file descriptor 
+	if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) == 0) 
 	{ 
 		perror("socket failed"); 
 		exit(EXIT_FAILURE); 
 	} 
 	
-	//set master socket to allow multiple connections , 
-	//this is just a good habit, it will work without this 
-	if( setsockopt(master_socket, SOL_SOCKET, SO_REUSEADDR, (char *)&opt, 
-		sizeof(opt)) < 0 ) 
+	// Forcefully attaching socket to the port 8080 
+	if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, 
+												&opt, sizeof(opt))) 
 	{ 
 		perror("setsockopt"); 
 		exit(EXIT_FAILURE); 
 	} 
-	
-	//type of socket created 
 	address.sin_family = AF_INET; 
 	address.sin_addr.s_addr = INADDR_ANY; 
 	address.sin_port = htons( PORT ); 
-		
-	//bind the socket to localhost port 8888 
-	if (bind(master_socket, (struct sockaddr *)&address, sizeof(address))<0) 
+	signal(SIGINT, handle_sig);
+	// Forcefully attaching socket to the port 8080 
+	if (bind(server_fd, (struct sockaddr *)&address, 
+								sizeof(address))<0) 
 	{ 
 		perror("bind failed"); 
 		exit(EXIT_FAILURE); 
 	} 
-	printf("Listener on port %d \n", PORT); 
-		
-	//try to specify maximum of 3 pending connections for the master socket 
-	if (listen(master_socket, 3) < 0) 
+	for(int i=0;i<MAX_GROUPS;i++)
+		{
+			for(int j=0;j<MAX_USER_PERGROUP;j++)
+				connection_socket[i][j]=-1;
+			connection_count[i]=0;
+		}
+	printf("executing...\n");
+	for(int i=0;i<MAX_GROUPS;i++)
+    pthread_create(&send_pthread[i], NULL, &send_message, NULL); 
+	if (listen(server_fd, 10) < 0) 
 	{ 
 		perror("listen"); 
 		exit(EXIT_FAILURE); 
 	} 
-		
-	//accept the incoming connection 
-	addrlen = sizeof(address); 
-	puts("Waiting for connections ..."); 
-		
-	while(TRUE) 
-	{ 
-		//clear the socket set 
-		FD_ZERO(&readfds); 
 	
-		//add master socket to set 
-		FD_SET(master_socket, &readfds); 
-		max_sd = master_socket; 
-			
-		//add child sockets to set 
-		for ( i = 0 ; i < max_clients ; i++) 
-		{ 
-			//socket descriptor 
-			sd = client_socket[i]; 
-				
-			//if valid socket descriptor then add to read list 
-			if(sd > 0) 
-				FD_SET( sd , &readfds); 
-				
-			//highest file descriptor number, need it for the select function 
-			if(sd > max_sd) 
-				max_sd = sd; 
-		} 
+
+	while (1)
+	{
+		int *new_socket=malloc(sizeof(int));
+		*new_socket = accept(server_fd, (struct sockaddr *)&address, (socklen_t*)&addrlen); 
 	
-		//wait for an activity on one of the sockets , timeout is NULL , 
-		//so wait indefinitely 
-		activity = select( max_sd + 1 , &readfds , NULL , NULL , NULL); 
+		if(pthread_create(&recv_pthread[client_count++],NULL,
+                           recv_message, (void *)new_socket) < 0)
+						   {
+							    perror("pthread_create()");
+            					exit(0);
+						   }
 	
-		if ((activity < 0) && (errno!=EINTR)) 
-		{ 
-			printf("select error"); 
-		} 
-			
-		//If something happened on the master socket , 
-		//then its an incoming connection 
-		if (FD_ISSET(master_socket, &readfds)) 
-		{ 
-			if ((new_socket = accept(master_socket, 
-					(struct sockaddr *)&address, (socklen_t*)&addrlen))<0) 
-			{ 
-				perror("accept"); 
-				exit(EXIT_FAILURE); 
-			} 
-			
-			//inform user of socket number - used in send and receive commands 
-			printf("New connection , socket fd is %d , ip is : %s , port : %d \n" , new_socket , inet_ntoa(address.sin_addr) , ntohs 
-				(address.sin_port)); 
-		
-			//send new connection greeting message 
-			if( send(new_socket, message, strlen(message), 0) != strlen(message) ) 
-			{ 
-				perror("send"); 
-			} 
-				
-			puts("Welcome message sent successfully"); 
-				
-			//add new socket to array of sockets 
-			for (i = 0; i < max_clients; i++) 
-			{ 
-				//if position is empty 
-				if( client_socket[i] == 0 ) 
-				{ 
-					client_socket[i] = new_socket; 
-					printf("Adding to list of sockets as %d\n" , i); 
-						
-					break; 
-				} 
-			} 
-		} 
-			
-		//else its some IO operation on some other socket 
-		for (i = 0; i < max_clients; i++) 
-		{ 
-			sd = client_socket[i]; 
-				
-			if (FD_ISSET( sd , &readfds)) 
-			{ 
-				//Check if it was for closing , and also read the 
-				//incoming message 
-				if ((valread = read( sd , buffer, 1024)) == 0) 
-				{ 
-					//Somebody disconnected , get his details and print 
-					getpeername(sd , (struct sockaddr*)&address , (socklen_t*)&addrlen); 
-					printf("Host disconnected , ip %s , port %d \n" , 
-						inet_ntoa(address.sin_addr) , ntohs(address.sin_port)); 
-						
-					//Close the socket and mark as 0 in list for reuse 
-					close( sd ); 
-					client_socket[i] = 0; 
-				} 
-					
-				//Echo back the message that came in 
-				else
-				{ 
-					//set the string terminating NULL byte on the end 
-					//of the data read 
-					buffer[valread] = '\0'; 
-					send(sd , buffer , strlen(buffer) , 0 ); 
-				} 
-			} 
-		} 
-	} 
-		
+	}
+
+	pthread_exit(NULL);
 	return 0; 
 } 

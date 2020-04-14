@@ -1,53 +1,109 @@
-#include <sys/socket.h>
-#include <sys/types.h>
-#include <netinet/in.h>
-#include <stdio.h>
-#include <string.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <arpa/inet.h>
-#include <sys/time.h>
-#include <sys/types.h>
-#include <unistd.h>
+// Client side C/C++ program to demonstrate Socket programming 
+#include <stdio.h> 
+#include <sys/socket.h> 
+#include <arpa/inet.h> 
+#include <unistd.h> 
+#include <string.h> 
 #include <pthread.h> 
+#include <stdio.h> 
+#include <stdlib.h> 
+#include <signal.h>
 
-#include "msg.h"
-#define PORT 8080 
+#include <msg.h>
+#include <ntp.h>
 
-pthread_t recv_thread;
+enum Mode mode;
 
+int sock = 0;
+pthread_t ptid; 
+FILE *fp;
+struct group_message msg;
+NTPClient *send_client;
 
-void messageread_sock(void *recvfd)
+void handle_sig(int sign)
 {
-    int refd=*(int *)recvfd;
-    struct grp_message recv_message;
+	switch (sign)
+	{
+	case SIGINT:
+		printf("killing");
+		pthread_kill(ptid,SIGINT);
+		close(sock);
+		if(mode==DEV)
+		{
+			fclose(fp);
+		}
+		exit(0);
+		break;
+	case SIGUSR1:
+		
+		printf("Sending test message\n");
+		strcpy(msg.message,"Test message plsss!!");
+		msg.time_stamp=get_time_now(send_client);
+		write(sock , &msg , sizeof(msg)); 
+		printf("Me:%s",msg.message);
+		break;
+	}
+}
 
-    while(!read( refd , &recv_message, sizeof(recv_message)))
-    {
-        printf("%s|$s\n",recv_message.user_name,recv_message.message)
-    }
-
+void* recv_read(void *v)
+{
+	 printf("executing program:%d\n",getpid());
+	int valread;
+	NTPClient *recv_client =malloc(sizeof(NTPClient));
+	NTPClient_init(recv_client);
+	double delay=0;
+	int *sock = (int *)v;
+	struct group_message incoming;
+	while(1)
+	{
+		valread = read( *sock , &incoming, sizeof(incoming)); 
+		if(valread)
+		{
+			printf("%s:%s\n",incoming.user_name,incoming.message);
+			delay=get_time_now(recv_client)-incoming.time_stamp;
+			if(mode==DEV)
+			fprintf(fp,"%d,%f\n",incoming.msgid,delay);
+		}
+	} 
 }
 
 int main(int argc, char const *argv[]) 
 { 
-    char username[uname_size] ="test_grp";
-    char grp_name[gname_size] ="test_user";
-
-    int sock = 0, valread; 
+	int valread; 
 	struct sockaddr_in serv_addr; 
-	char buffer[1024] = {0}; 
-	if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) 
+	char hello[1024]; 
+	char buffer[1024];
+    if(argc!=6)
+    {
+        printf("Wrong Arguments!! \nUsage:%s <Server-IP-Addr> <Port> <User-Name> <Group-Name> <Mode>\n",argv[0]);
+        exit(EXIT_FAILURE);
+    }
+	
+    
+    int port=atoi(argv[2]);
+    struct group_chat_request req;
+    struct group_chat_acknowledge ack;
+    
+    strcpy(req.group_name,argv[4]);
+    strcpy(req.user_name,argv[3]);
+
+    if(!strcmp(argv[5],"DEV"))
+        mode=DEV;
+    else
+        mode=PROD;
+    if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) 
 	{ 
 		printf("\n Socket creation error \n"); 
 		return -1; 
 	} 
 
 	serv_addr.sin_family = AF_INET; 
-	serv_addr.sin_port = htons(PORT); 
-	
+	serv_addr.sin_port = htons(port); 
+	signal(SIGINT,handle_sig);
+	signal(SIGUSR1,handle_sig);
+
 	// Convert IPv4 and IPv6 addresses from text to binary form 
-	if(inet_pton(AF_INET, "127.0.0.1", &serv_addr.sin_addr)<=0) 
+	if(inet_pton(AF_INET, argv[1], &serv_addr.sin_addr)<=0) 
 	{ 
 		printf("\nInvalid address/ Address not supported \n"); 
 		return -1; 
@@ -58,38 +114,37 @@ int main(int argc, char const *argv[])
 		printf("\nConnection Failed \n"); 
 		return -1; 
 	} 
-//----------------------Till here connecting to server-----------------------
-/*
-implement the initial setup,
-initial serrver time download so that we can get offset of all the clocks of 
-different clients from server time.
-*/ 
-//---------------------------------------------------------------------------
-	struct grpchat_request init_req;
-    strcpy(init_req.group_name,grp_name);
-    strcpy(init_req.user_name,username);
+	write(sock,&req,sizeof(req));
+    read(sock,&ack,sizeof(ack));
+    
+    msg.group_identifier=ack.group_identifier;
+    msg.user_identifier=ack.user_identifier;
+    strcpy(msg.user_name,req.user_name);
+    printf("Group_IDENTIFIER:%d\nUser_IDENTIFIER:%d\n",ack.group_identifier,ack.user_identifier);
+    
+	char filename[100];
+	if(mode==DEV)
+	{
+		sprintf(filename,"./log/log_%d_%d.txt",ack.group_identifier,ack.user_identifier);	
+		fp = fopen(filename, "w");
+		printf("Filename=%s\n",filename);
+		if(fp == NULL)
+		{
+			printf("Error opening file\n");
+			exit(1);
+		}
+	}
+	 printf("executing program:%d\n",getpid());
+    pthread_create(&ptid, NULL, &recv_read, &sock); 
+	send_client=malloc(sizeof(NTPClient));
+	NTPClient_init(send_client);
 
-    write(sock,&init_req,sizeof(init_req));//sending the intial request to the server 
-
-
-    struct grpchat_indentifier grp_identi;
-    read(sock, &grp_identi, sizeof(grp_identi));
-
-    if(pthread_create(&recv_thread,NULL,messageread_sock,(void *) sock)<0)
-    {
-        perror("error in thread creation");
-    }
-
-    struct grp_message send_message;
-    send_message.grp_identifier=grp_identi.grp_identifier;
-    send_message.user_identifier=grp_identi.user_identifier;
-    strcpy(send_message.user_name,init_req.user_name);
-
-
-    while (1)
-    {
-        fgets(send_message.message,sizeof(send_message.message),stdin);
-        write(sock,&send_message,sizeof(send_message));
-    }
+	while(1)
+	{
+		fgets(msg.message,1024,stdin);
+		msg.time_stamp=get_time_now(send_client);
+		write(sock , &msg , sizeof(msg)); 
+		printf("Me:%s",msg.message);
+	}
 	return 0; 
 } 
