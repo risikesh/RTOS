@@ -2,9 +2,10 @@
 #define _msg_H_
 #include <stdlib.h>
 #include <stdio.h>
-#define gname_size 30
-#define uname_size 30
-#define msg_size 1000
+#include <sys/time.h>
+#define gname_size 10
+#define uname_size 10
+#define msg_size 100
 
 enum MSG_STATUS{CLOSE_ME,MESSAGE};
 
@@ -35,7 +36,7 @@ struct group_message
     int user_identifier;
     char message[msg_size];
     char user_name[uname_size];
-    double time_stamp;
+    struct timeval time_stamp;
     int msgid;//issued by server
 };
 //----------------------------------Message Queue-----------------------------------------------//
@@ -45,6 +46,31 @@ struct message_queue
     struct message_queue *next;
 };
 
+struct timeval GetTimeStamp() {
+    /*
+    struct timeval tv;
+    gettimeofday(&tv,NULL);
+    return tv;
+    */
+   struct timeval timestamp;
+    gettimeofday(&timestamp, NULL);
+    long seconds = timestamp.tv_sec;
+    long microseconds = timestamp.tv_usec;
+    //seconds += secondOffset;
+    //microseconds += usecondOffset;
+    while(microseconds < 0) {
+        seconds--;
+        microseconds += 1000 * 1000;
+    }
+    while(microseconds >= 1000 * 1000) {
+        seconds++;
+        microseconds -= 1000 * 1000;
+    }
+    timestamp.tv_sec = seconds;
+    timestamp.tv_usec = microseconds;
+    return timestamp;
+
+}
 
 
 #endif

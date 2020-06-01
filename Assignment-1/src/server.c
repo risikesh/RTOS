@@ -1,3 +1,6 @@
+/*
+Documentation
+*/
 // Server side C/C++ program to demonstrate Socket programming 
 #include <unistd.h> 
 #include <stdio.h> 
@@ -21,6 +24,7 @@
 #define MAX_RECEIVER_THREAD 300
 
 
+
 pthread_t recv_pthread[MAX_RECEIVER_THREAD];
 pthread_t send_pthread[MAX_USER_PERGROUP];
 
@@ -41,7 +45,7 @@ void push_to_queue(struct group_message incoming_message)
     struct message_queue *new_msg=malloc(sizeof(struct message_queue));
     
     new_msg->message_q_ll   = incoming_message;
-    printf("incoming:%s\n",incoming_message.message);
+    //printf("incoming:%s\n",incoming_message.message);
     new_msg->next           = Message_Q;
 
     Message_Q                 =new_msg;
@@ -57,7 +61,7 @@ struct group_message pop_from_queue()
     Message_Q                       =Message_Q->next;
 
     struct group_message pop_ret    =pop_msg->message_q_ll;
-    printf("outgoing:%s\n",pop_ret.message);
+    //printf("outgoing:%s\n",pop_ret.message);
     free(pop_msg);
 
     return pop_ret;
@@ -92,8 +96,16 @@ void handle_sig()
 {
 	printf("Do you want to close the server program?(Y/n):");
 	char close_in[10]="y";
-	//if(mode)
-	//scanf("%s",close_in);
+	if(Message_Q==NULL)
+		printf("Server is empty");
+	else
+	{
+		while(!is_queue_empty)
+		{
+			printf("%s:%s\n",Message_Q->message_q_ll.user_name,Message_Q->message_q_ll.message);
+		}
+	}
+	
 	if(close_in[0]=='y'||close_in[0]=='Y')
 	{
 		for(int i=0;i<3;i++)
@@ -179,11 +191,9 @@ void* send_message(void *nsock)
 			pthread_cond_wait(&QEMPTYWAIT,&message_locking);
 		
 		}
-		//printf("What");
 		message_to_send=pop_from_queue();
 		group_id=message_to_send.group_identifier;
 		user_id=message_to_send.user_identifier;
-		//printf("Sending:%d\n",group_id);
 		pthread_mutex_unlock(&message_locking);
 		for(int i=0;i<connection_count[group_id];i++)
 			if(~connection_socket[group_id][i] && i!=user_id)
@@ -193,6 +203,7 @@ void* send_message(void *nsock)
 
 int main(int argc, char const *argv[]) 
 { 
+	printf("server created\n");
 	int valread; 
 	struct sockaddr_in address; 
 	int opt = 1; 
@@ -207,8 +218,7 @@ int main(int argc, char const *argv[])
 	} 
 	
 	// Forcefully attaching socket to the port 8080 
-	if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, 
-												&opt, sizeof(opt))) 
+	if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT ,&opt, sizeof(opt))) 
 	{ 
 		perror("setsockopt"); 
 		exit(EXIT_FAILURE); 

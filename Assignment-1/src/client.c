@@ -16,16 +16,16 @@ enum Mode mode;
 
 int sock = 0;
 pthread_t ptid; 
-FILE *fp;
 struct group_message msg;
-NTPClient *send_client;
+struct group_chat_acknowledge ack;
+FILE *fp;
 
 void handle_sig(int sign)
 {
 	switch (sign)
 	{
 	case SIGINT:
-		printf("killing");
+		printf("killing client,PID=%d\n",getpid());
 		pthread_kill(ptid,SIGINT);
 		close(sock);
 		if(mode==DEV)
@@ -35,62 +35,79 @@ void handle_sig(int sign)
 		exit(0);
 		break;
 	case SIGUSR1:
-		
-		printf("Sending test message\n");
-		strcpy(msg.message,"Test message plsss!!");
-		msg.time_stamp=get_time_now(send_client);
-		write(sock , &msg , sizeof(msg)); 
-		printf("Me:%s",msg.message);
+		if(mode==DEV)
+		{	//printf("Sending test message\n");
+			sprintf(msg.message,"Test message,sent from:%d",getpid());
+			msg.time_stamp= GetTimeStamp();
+			write(sock , &msg , sizeof(msg)); 
+			printf("Me:%s\n",msg.message);
+		}
 		break;
 	}
 }
 
 void* recv_read(void *v)
 {
-	 printf("executing program:%d\n",getpid());
-	int valread;
-	NTPClient *recv_client =malloc(sizeof(NTPClient));
-	NTPClient_init(recv_client);
-	double delay=0;
+	char filename[30];
+	if(mode==DEV)
+	{
+		sprintf(filename,"./log_temp/log_%d_%d.txt",ack.group_identifier,ack.user_identifier);	
+		fp = fopen(filename, "w");
+		if(fp == NULL)
+		{
+			printf("Error opening file\n");
+			exit(1);
+		}
+	}
+
+	long long delay=0;
 	int *sock = (int *)v;
 	struct group_message incoming;
+
 	while(1)
 	{
-		valread = read( *sock , &incoming, sizeof(incoming)); 
-		if(valread)
+		if(read( *sock , &incoming, sizeof(incoming)))
 		{
-			printf("%s:%s\n",incoming.user_name,incoming.message);
-			delay=get_time_now(recv_client)-incoming.time_stamp;
-			if(mode==DEV)
-			fprintf(fp,"%d,%f\n",incoming.msgid,delay);
+			
+			
+			if(mode==DEV){
+				//delay=get_time_now(recv_client)-incoming.time_stamp;
+				struct timeval currclock= GetTimeStamp();
+				delay=((currclock.tv_sec - incoming.time_stamp.tv_sec)*1000*1000) +(currclock.tv_usec- incoming.time_stamp.tv_usec);
+				fprintf(fp,"%d,%lld,%s\n",incoming.msgid,delay,incoming.user_name);
+			}
+			else
+				printf("%s:%s\n",incoming.user_name,incoming.message);
+			
+			
 		}
 	} 
 }
 
 int main(int argc, char const *argv[]) 
-{ 
-	int valread; 
-	struct sockaddr_in serv_addr; 
-	char hello[1024]; 
-	char buffer[1024];
-    if(argc!=6)
-    {
-        printf("Wrong Arguments!! \nUsage:%s <Server-IP-Addr> <Port> <User-Name> <Group-Name> <Mode>\n",argv[0]);
-        exit(EXIT_FAILURE);
-    }
+{ 	
+	printf("client created,PID=%d\n",getpid());
+	struct sockaddr_in serv_addr;  
+    	if(argc!=6)
+    	{
+        	printf("Wrong Arguments!! \nUsage:%s <Server-IP-Addr> <Port> <User-Name> <Group-Name> <Mode>\n",argv[0]);
+       		exit(EXIT_FAILURE);
+    	}
 	
     
     int port=atoi(argv[2]);
     struct group_chat_request req;
-    struct group_chat_acknowledge ack;
-    
+        
     strcpy(req.group_name,argv[4]);
     strcpy(req.user_name,argv[3]);
 
     if(!strcmp(argv[5],"DEV"))
         mode=DEV;
-    else
+    else if(!strcmp(argv[5],"PROD"))
         mode=PROD;
+	else
+		exit(EXIT_FAILURE);
+	
     if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) 
 	{ 
 		printf("\n Socket creation error \n"); 
@@ -120,30 +137,14 @@ int main(int argc, char const *argv[])
     msg.group_identifier=ack.group_identifier;
     msg.user_identifier=ack.user_identifier;
     strcpy(msg.user_name,req.user_name);
-    printf("Group_IDENTIFIER:%d\nUser_IDENTIFIER:%d\n",ack.group_identifier,ack.user_identifier);
-    
-	char filename[100];
-	if(mode==DEV)
-	{
-		sprintf(filename,"./log/log_%d_%d.txt",ack.group_identifier,ack.user_identifier);	
-		fp = fopen(filename, "w");
-		printf("Filename=%s\n",filename);
-		if(fp == NULL)
-		{
-			printf("Error opening file\n");
-			exit(1);
-		}
-	}
-	 printf("executing program:%d\n",getpid());
-    pthread_create(&ptid, NULL, &recv_read, &sock); 
-	send_client=malloc(sizeof(NTPClient));
-	NTPClient_init(send_client);
+    //printf("Group_IDENTIFIER:%d\nUser_IDENTIFIER:%d\n",ack.group_identifier,ack.user_identifier);
 
+    pthread_create(&ptid, NULL, &recv_read, &sock); 
 	while(1)
 	{
 		fgets(msg.message,1024,stdin);
-		msg.time_stamp=get_time_now(send_client);
 		write(sock , &msg , sizeof(msg)); 
+		if(mode==PROD)
 		printf("Me:%s",msg.message);
 	}
 	return 0; 

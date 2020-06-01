@@ -1,29 +1,24 @@
-import subprocess
 import os
-import signal
-import time
-print os.getcwd()
-server= subprocess.Popen('./build/server',stdin=subprocess.PIPE,stdout=subprocess.PIPE)
-time.sleep(0.1)
-client1=subprocess.Popen(['./build/client', '127.0.0.1', '8080', 'rkr1', 'test' ,'DEV'],stdin=subprocess.PIPE,stdout=subprocess.PIPE)
-time.sleep(0.1)
-client2=subprocess.Popen(['./build/client', '127.0.0.1', '8080', 'rkr2', 'test' ,'DEV'],stdin=subprocess.PIPE,stdout=subprocess.PIPE)
-time.sleep(0.1)
+import csv
 
-client1.stdin.write('HI\n')
-time.sleep(0.5)
-client2.stdin.write('HI\n')
-time.sleep(0.5)
-client1.stdin.close()
-'''
-time.sleep(0.1)
-client2.stdin.write('HI\n')
-time.sleep(0.1)
-client2.stdin.write('HI\n')
-client2.stdin.close()
-'''
-time.sleep(1)
-os.kill(server.pid,signal.SIGINT)
-os.kill(client1.pid,signal.SIGINT)
-os.kill(client2.pid,signal.SIGINT)
-print "done"
+os.system("mkdir -p log_temp")
+os.system("rm log/*")
+
+print "|parallel_users|number_of_users|average_time|minimum_time|maximum_time|"
+print "|---|---|---|---|---|"
+for parallel_users in range(1,6):
+    for number_of_users in range(10,110,10):
+        command = "./build/test " + str(number_of_users) +" "+ str(1)+" "+str(parallel_users)+" 500 final_"+str(number_of_users)+"_"+str(parallel_users)+".csv > log/command_log_"+str(number_of_users)+"_"+str(parallel_users)+".txt"
+        os.system(command)
+        #print command
+        csvfile= open('log/'+"final_"+str(number_of_users)+"_"+str(parallel_users)+".csv")
+        spamreader = csv.reader(csvfile, delimiter=',')
+        total_time=[]
+        for row in spamreader:
+            total_time.append(float(row[1]))
+        print "|",parallel_users,"|",number_of_users,"|",sum(total_time)/len(total_time),"|",min(total_time),"|",max(total_time),"|"
+
+os.system("rm -rf log_temp")
+print "Do you want to retain the main log file (y/n) ?"
+if(raw_input()=='n'):
+    os.system('rm log/*')

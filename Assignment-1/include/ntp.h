@@ -36,6 +36,8 @@
 #define MODE(packet) (uint8_t) ((packet.li_vn_mode & 0x07) >> 0) // (mode & 00 000 111) >> 0
 
 
+
+
 void error( char* msg )
 {
     perror( msg ); // Print the error message to stderr.
