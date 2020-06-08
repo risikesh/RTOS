@@ -1,8 +1,15 @@
-.DEFAULT_GOAL := compile
+.DEFAULT_GOAL := scratch
+scratch:
+	@echo "Compiling all files"
+	mkdir build
+	mkdir log
+	gcc ./src/client.c -o ./build/client -I ./include/ -lpthread
+	gcc ./src/server.c -o ./build/server -I ./include/ -lpthread
+	gcc ./test/test.c -o ./build/test -I ./include/ -lpthread
 compile:
-	@echo "Compiling"
-	gcc ./src/client.c -o ./build/client
-	gcc ./src/server.c -o ./build/server
+	@echo "Compiling all files"
+	gcc ./src/client.c -o ./build/client -I ./include/ -lpthread
+	gcc ./src/server.c -o ./build/server -I ./include/ -lpthread
+	gcc ./test/test.c -o ./build/test -I ./include/ -lpthread
 clean:
-	rm ./build/client
-	rm ./build/server
+	rm -rf log build log_temp

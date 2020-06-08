@@ -203,6 +203,11 @@ void* send_message(void *nsock)
 
 int main(int argc, char const *argv[]) 
 { 
+	if(argc!=2)
+	{
+		printf("Wrong usage:%s <PortNumber>",argv[0]);
+		exit(EXIT_FAILURE);
+	}
 	printf("server created\n");
 	int valread; 
 	struct sockaddr_in address; 
@@ -225,7 +230,7 @@ int main(int argc, char const *argv[])
 	} 
 	address.sin_family = AF_INET; 
 	address.sin_addr.s_addr = INADDR_ANY; 
-	address.sin_port = htons( PORT ); 
+	address.sin_port = htons( atoi(argv[1]) ); 
 	signal(SIGINT, handle_sig);
 	// Forcefully attaching socket to the port 8080 
 	if (bind(server_fd, (struct sockaddr *)&address, 

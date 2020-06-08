@@ -5,7 +5,7 @@
 #include <sys/time.h>
 #define gname_size 10
 #define uname_size 10
-#define msg_size 100
+#define msg_buf_size 1024
 
 enum MSG_STATUS{CLOSE_ME,MESSAGE};
 
@@ -34,9 +34,8 @@ struct group_message
     enum MSG_STATUS status;
     int group_identifier;
     int user_identifier;
-    char message[msg_size];
+    uint8_t message[msg_buf_size];
     char user_name[uname_size];
-    struct timeval time_stamp;
     int msgid;//issued by server
 };
 //----------------------------------Message Queue-----------------------------------------------//

@@ -1,0 +1,63 @@
+
+/*
+
+
+static void* SDL_STREAM(void *arg){
+
+
+  // SDL2 begins
+    memset(&sdlRect, 0, sizeof(sdlRect));
+    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER)) {
+        printf("Could not initialize SDL - %s\n", SDL_GetError()); return NULL;}
+
+    sdlScreen = SDL_CreateWindow("Simple YUV Window", SDL_WINDOWPOS_UNDEFINED,
+            SDL_WINDOWPOS_UNDEFINED, IMAGE_WIDTH+80,IMAGE_HEIGHT, SDL_WINDOW_SHOWN);
+
+    if (!sdlScreen) {
+        fprintf(stderr, "SDL: could not create window - exiting:%s\n",SDL_GetError());return NULL;}
+
+    sdlRenderer = SDL_CreateRenderer(sdlScreen, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+    if (sdlRenderer == NULL) {
+        fprintf(stderr, "SDL_CreateRenderer Error\n");return NULL;}
+    sdlTexture = SDL_CreateTexture(sdlRenderer, SDL_PIXELFORMAT_YUY2, SDL_TEXTUREACCESS_STREAMING, IMAGE_WIDTH, IMAGE_HEIGHT);
+    sdlRect.w = IMAGE_WIDTH;
+    sdlRect.h = IMAGE_HEIGHT;
+
+    int fd = *((int *) ( arg));
+    //void (*handler)(void *pframe, int length) = ((struct streamHandler *)(arg))->framehandler;
+
+    fd_set fds;
+    struct v4l2_buffer buf;
+    while (!thread_exit_sig) {
+        int ret;
+        FD_ZERO(&fds);
+        FD_SET(fd, &fds);
+        struct timeval tv = {.tv_sec = 1, .tv_usec = 0};
+        ret = select(fd + 1, &fds, NULL, NULL, &tv);
+        if (-1 == ret) {
+        fprintf(stderr, "select error\n");
+        return NULL;
+        } else if (0 == ret) {
+        fprintf(stderr, "timeout waiting for frame\n");
+        continue;
+        }
+        if (FD_ISSET(fd, &fds)) {
+            memset(&buf, 0, sizeof(buf));
+            buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+            buf.memory = V4L2_MEMORY_MMAP;
+            if (-1 == ioctl(fd, VIDIOC_DQBUF, &buf)) {
+                fprintf(stderr, "VIDIOC_DQBUF failure\n"); return NULL; }
+            //read mem_buffer[buf.index].start
+            SDL_UpdateTexture(sdlTexture, &sdlRect,mem_buffer[buf.index].start, IMAGE_WIDTH *2 );
+            SDL_RenderClear(sdlRenderer);
+            SDL_RenderCopy(sdlRenderer, sdlTexture, NULL, &sdlRect);
+            SDL_RenderPresent(sdlRenderer);
+
+            buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+            buf.memory = V4L2_MEMORY_MMAP;
+            if (-1 == ioctl(fd, VIDIOC_QBUF, &buf)) {
+                fprintf(stderr, "VIDIOC_QBUF failure\n"); return NULL; }
+        }
+    }
+    return NULL;
+*/
