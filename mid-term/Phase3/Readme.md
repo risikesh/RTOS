@@ -22,4 +22,6 @@ make
 
 #TO RUN
 ./build/client 127.0.0.1 8080 risikesh grp1
+#frontendclient
+python frontend/client_front.py
 ```

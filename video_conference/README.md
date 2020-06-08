@@ -27,7 +27,7 @@ make server
 
 ```shell
 # requirements 
-sudo apt-get install -y git make  libsdl2-dev pulseaudio libsdl2-image-dev libsdl2-mixer-dev libsdl2-ttf-dev
+sudo apt-get install -y git make  libsdl2-dev libpulse-dev libsdl2-image-dev libsdl2-mixer-dev libsdl2-ttf-dev
 
 # Make and seploy server
 
